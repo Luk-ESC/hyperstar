@@ -1,8 +1,8 @@
 #![feature(lazy_cell)]
 
-use num::bigint::BigUint;
-use num::{Integer, Zero};
 use crate::constants::ZERO;
+use num::bigint::BigUint;
+use num::{Integer, ToPrimitive, Zero};
 mod constants;
 
 macro_rules! biguint {
@@ -28,24 +28,32 @@ macro_rules! biguint {
 ///
 /// let value = calculate_value(biguint!(1), biguint!(10), biguint!(3));
 /// assert_eq!(value, biguint!(100))
-fn calculate_value(digit: BigUint, base: BigUint, place: usize) -> BigUint{
+fn calculate_value(digit: BigUint, base: BigUint, place: usize) -> BigUint {
     if digit.is_zero() {
         return ZERO.clone();
     }
     base.pow((place - 1) as _) * digit
 }
 
-/// Convert a whole number to `to_base`.
-pub fn convert_whole_to_base(digits: Vec<BigUint>, from_base: BigUint, to_base: BigUint) -> Vec<BigUint>{
-    let mut real_number = biguint!(0);
+fn value_of_whole(digits: Vec<BigUint>, base: BigUint) -> BigUint {
+    let mut value = biguint!(0);
 
     let digit_count = digits.len();
-    for (i, v) in digits.into_iter().enumerate(){
+    for (i, digit) in digits.into_iter().enumerate() {
         let place = digit_count - i;
-        real_number += calculate_value(v, from_base.clone(), place);
+        value += calculate_value(digit, base.clone(), place);
     }
+    value
+}
 
-    to_digit_arr(real_number, to_base)
+/// Convert a whole number to `to_base`.
+pub fn convert_whole_to_base(
+    digits: Vec<BigUint>,
+    from_base: BigUint,
+    to_base: BigUint,
+) -> Vec<BigUint> {
+    let value = value_of_whole(digits, from_base);
+    to_digit_arr(value, to_base)
 }
 
 /// Convert a number to an array of digits in `base`.
@@ -53,26 +61,72 @@ fn to_digit_arr(mut number: BigUint, base: BigUint) -> Vec<BigUint> {
     let mut digits = vec![];
 
     while number >= base {
-        println!("{number}");
         let (div, rest) = number.div_mod_floor(&base);
 
-        println!("{div}, {rest}");
         number = div;
         digits.push(rest);
     }
+
     digits.push(number);
     digits.reverse();
     digits
 }
 
+fn convert_decimal_to_base(
+    digits: Vec<BigUint>,
+    from_base: BigUint,
+    to_base: BigUint,
+) -> Vec<BigUint> {
+    let mut output = vec![];
+
+    let digit_count = digits.len();
+    let mut decimals = digits;
+    while decimals.len() == digit_count {
+        let value = value_of_whole(decimals.clone(), from_base.clone());
+        let value = value * to_base.clone();
+        let digits = to_digit_arr(value, from_base.clone());
+        println!("{digits:?}, {digit_count:?}");
+        if digits.len() < digit_count {
+            break;
+        }
+        let (whole, decimal_part) = digits.split_at(digits.len() - digit_count);
+        decimals = decimal_part.to_vec();
+
+        let whole_value = value_of_whole(whole.to_vec(), from_base.clone());
+        output.push(whole_value);
+    }
+
+    output
+}
+
+fn convert_number(
+    whole: Vec<BigUint>,
+    decimal: Vec<BigUint>,
+    from_base: BigUint,
+    to_base: BigUint,
+) -> (Vec<BigUint>, Vec<BigUint>) {
+    (
+        convert_whole_to_base(whole, from_base.clone(), to_base.clone()),
+        convert_decimal_to_base(decimal, from_base, to_base),
+    )
+}
 
 fn main() {
+    let x = convert_number(
+        [biguint![3]].to_vec(),
+        biguint![1, 4, 1, 6].to_vec(),
+        biguint!(16),
+        biguint!(10),
+    );
+    println!("{:?}.{:?}", x.0, x.1);
+
+    println!();
 }
 
 #[cfg(test)]
 mod testing {
-    use crate::*;
     use crate::constants::*;
+    use crate::*;
 
     #[test]
     pub(crate) fn calculate_value_() {
@@ -97,10 +151,8 @@ mod testing {
         let arr = to_digit_arr(biguint!(0b1010101), biguint!(2));
         assert_eq!(arr, biguint![1, 0, 1, 0, 1, 0, 1]);
 
-
         let arr = to_digit_arr(biguint!(123456789), biguint!(10));
         assert_eq!(arr, biguint![1, 2, 3, 4, 5, 6, 7, 8, 9]);
-
 
         let arr = to_digit_arr(biguint!(100), biguint!(10));
         assert_eq!(arr, biguint![1, 0, 0]);
@@ -108,7 +160,6 @@ mod testing {
 
     #[test]
     fn convert_whole_to_base_() {
-
         let nums = biguint![0, 1, u32::MAX, u8::MAX];
         for number in nums {
             let binary = to_digit_arr(number.clone(), biguint!(2));
@@ -116,6 +167,5 @@ mod testing {
             let converted = convert_whole_to_base(binary, biguint!(2), biguint!(10));
             assert_eq!(decimal, converted);
         }
-
     }
 }
