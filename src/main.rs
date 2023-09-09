@@ -76,21 +76,20 @@ fn convert_decimal_to_base(
     digits: Vec<BigUint>,
     from_base: BigUint,
     to_base: BigUint,
+    up_to: usize,
 ) -> Vec<BigUint> {
     let mut output = vec![];
 
     let digit_count = digits.len();
-    let mut decimals = digits;
-    while decimals.len() == digit_count {
-        let value = value_of_whole(decimals.clone(), from_base.clone());
-        let value = value * to_base.clone();
-        let digits = to_digit_arr(value, from_base.clone());
+    let mut value = value_of_whole(digits, from_base.clone());
+    while !value.is_zero() && output.len() < up_to{
+        let digits = to_digit_arr(value * to_base.clone(), from_base.clone());
         println!("{digits:?}, {digit_count:?}");
         if digits.len() < digit_count {
             break;
         }
         let (whole, decimal_part) = digits.split_at(digits.len() - digit_count);
-        decimals = decimal_part.to_vec();
+        value = value_of_whole(decimal_part.to_vec(), from_base.clone());
 
         let whole_value = value_of_whole(whole.to_vec(), from_base.clone());
         output.push(whole_value);
@@ -104,23 +103,23 @@ fn convert_number(
     decimal: Vec<BigUint>,
     from_base: BigUint,
     to_base: BigUint,
+    up_to: usize,
 ) -> (Vec<BigUint>, Vec<BigUint>) {
     (
         convert_whole_to_base(whole, from_base.clone(), to_base.clone()),
-        convert_decimal_to_base(decimal, from_base, to_base),
+        convert_decimal_to_base(decimal, from_base, to_base, up_to),
     )
 }
 
 fn main() {
-    let x = convert_number(
+    let num = convert_number(
+        [biguint![0]].to_vec(),
         [biguint![3]].to_vec(),
-        biguint![1, 4, 1, 6].to_vec(),
-        biguint!(16),
         biguint!(10),
+        biguint!(16),
+        10
     );
-    println!("{:?}.{:?}", x.0, x.1);
-
-    println!();
+    println!("{:?}.{:?}", num.0, num.1);
 }
 
 #[cfg(test)]
