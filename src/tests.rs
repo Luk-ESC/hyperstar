@@ -26,7 +26,28 @@ mod testing {
         let a = Number::new("0.5").to_base(biguint!(2), 500);
         assert_eq!(&a.decimal, &biguint_arr!(1));
 
-        let a = Number::new("0.5").to_base(biguint!(2), 500);
+        let a = Number::new("0.2").to_base(biguint!(5), 10);
         assert_eq!(&a.decimal, &biguint_arr!(1));
+    }
+
+    #[test]
+    fn limits() {
+        let mut x = String::new();
+
+        x.extend(std::iter::repeat("69420").take(100));
+        x.push('.');
+        x.extend(std::iter::repeat("69420").take(100));
+
+        let a = Number::new(&x);
+        let x = a.to_base(biguint!(u16::MAX), 100);
+        let y = x.to_base(biguint!(10), 20);
+        assert_eq!(a.to_base(biguint!(10), 20), y);
+    }
+
+    #[test]
+    fn base_42(){
+        let x = Number::new("42.0").to_base(biguint!(43), 1000);
+        assert_eq!(x.whole, biguint_arr!(42));
+        assert_eq!(x.decimal, biguint_arr!(0));
     }
 }
