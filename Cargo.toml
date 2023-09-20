@@ -7,5 +7,11 @@ authors = ["Lukas Eschbacher"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/madanifest.html
 
 [dependencies]
-num-bigint = "0.4.1"
-num-integer = "0.1.45"
+num = "0.4.1"
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[[bench]]
+name = "benchmark"
+harness = false

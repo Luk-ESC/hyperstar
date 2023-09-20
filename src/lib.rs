@@ -1,47 +1,48 @@
+use num::bigint::BigUint;
+use num::integer::Integer;
 use std::fmt::{Debug, Formatter};
-use num_bigint::BigUint;
-use num_integer::Integer;
+use std::str::FromStr;
+use num::Zero;
 
 mod macros;
 mod tests;
 
-/// Calculate the value of a digit at place `place` in a number of base `base`.<br>
-/// `place` is counting from the right, starting at 1.
-fn value_of_digit(digit: &BigUint, base: &BigUint, place: usize) -> BigUint {
-    if digit == &biguint!(0) {
+/// Calculate the value of a whole number in base `base`
+#[inline(always)]
+pub fn value_of_digits(digits: &[BigUint], base: &BigUint) -> BigUint {
+    if digits.is_empty() {
         return biguint!(0);
     }
-    base.pow((place - 1) as _) * digit
-}
 
-/// Calculate the value of a whole number in base `base`
-fn value_of_digits(digits: &[BigUint], base: &BigUint) -> BigUint {
-    digits
-        .iter()
-        .enumerate()
-        .map(|(i, digit)| {
-            let place = digits.len() - i;
-            value_of_digit(digit, base, place)
-        })
-        .sum()
+    if digits.len() == 1 {
+        return digits[0].clone();
+    }
+
+    let mut place = biguint!(1);
+    let mut sum = biguint!(0);
+
+    for digit in digits.iter().rev() {
+        sum += place.clone() * digit;
+        place *= base;
+    }
+    sum
 }
 
 /// Convert a number to an array of digits in `base`.
 fn to_digit_arr(mut number: BigUint, base: &BigUint) -> Vec<BigUint> {
-    let mut digits = Vec::new();
+    let mut digits = Vec::with_capacity(10);
 
     while &number >= base {
-
         let (div, rest) = number.div_mod_floor(base);
 
         number = div;
-        digits.insert(0, rest);
+        digits.push(rest);
     }
 
-    digits.insert(0, number);
+    digits.push(number);
+    digits.reverse();
     digits
 }
-
 
 /// A Number represented as a Vector of digits associated with a base with functionality for converting between different bases. <bR>
 ///
@@ -53,15 +54,14 @@ fn to_digit_arr(mut number: BigUint, base: &BigUint) -> Vec<BigUint> {
 #[derive(Eq, PartialEq)]
 pub struct Number {
     whole: Vec<BigUint>,
-    decimal: Vec<BigUint>,
+    left_div: BigUint,
+    right_div: BigUint,
     base: BigUint,
+    negative: bool
 }
 
 impl Number {
-    pub fn get_decimal_part(&self) -> &[BigUint] {
-        &self.decimal
-    }
-    pub fn get_whole_part(&self) -> &[BigUint]{
+    pub fn get_whole_part(&self) -> &[BigUint] {
         &self.whole
     }
 
@@ -69,33 +69,39 @@ impl Number {
         &self.base
     }
 
-    /// Convert decimal part of self to different base. `up_to` specifies how many digits to calculate.
-    fn decimal_to_base(&self, to_base: &BigUint, up_to: usize) -> Vec<BigUint> {
-        let mut output = vec![];
+    pub fn get_lossy_decimal(&self) -> Vec<BigUint> {
+        let mut right_div = self.right_div.clone();
+        let mut left_div = self.left_div.clone();
+        let y = right_div.gcd(&left_div);
+        right_div /= y.clone();
+        left_div /= y.clone();
 
-        let digit_count = self.decimal.len();
+        let mut digits = vec![];
 
-        let mut value = value_of_digits(&self.decimal, &self.base);
+        println!("{}", right_div);
+        println!("{}", self.base);
 
-        if value == biguint!(0){
-            return vec![biguint!(0)];
-        }
-
-        while value != biguint!(0) && output.len() < up_to {
-            let mut digits = to_digit_arr(value * to_base, &self.base);
-
-            while digits.len() < digit_count {
-                digits.insert(0, biguint!(0));
+        while !right_div.is_zero() && !left_div.is_zero() {
+            let (x, y) = right_div.div_mod_floor(&self.base);
+            right_div = x;
+            if !y.is_zero() {
+                right_div -= y * right_div.clone();
             }
-
-            let (whole, decimal_part) = digits.split_at(digits.len() - digit_count);
-            value = value_of_digits(decimal_part, &self.base);
-
-            output.push(value_of_digits(whole, &self.base));
+            let (x, y ) = left_div.div_mod_floor(&self.base);
+            println!("x: {x}, y: {y}");
+            println!("right_div: {right_div}, left_div: {left_div}");
+            println!("base: {}", self.base);
+            left_div = x;
+            digits.push(y)
         }
 
-        output
+        let mut x = vec![];
+        for i in digits.iter().rev().skip_while(|x| x.is_zero()) {
+            x.insert(0, i.clone());
+        }
+        x
     }
+
 
     /// Convert self to base. `up_to` specifies the digits of precision, in the case
     /// where self is not accurately representable in the other base.
@@ -105,24 +111,24 @@ impl Number {
     /// # Example
     /// ```rust
     /// use hyperstar::{biguint, biguint_arr, Number};
-    /// let x = Number::new("16.25").to_base(biguint!(4), 100);
+    /// let x = Number::new("16.25").to_base(biguint!(4));
     ///
     /// assert_eq!(x.get_whole_part(), biguint_arr!(1, 0, 0));
-    /// assert_eq!(x.get_decimal_part(), biguint_arr!(1));
+    /// assert_eq!(x.get_lossy_decimal(), biguint_arr!(1));
     /// ```
-    pub fn to_base(&self, base: BigUint, up_to: usize) -> Self {
+    pub fn to_base(&self, base: BigUint) -> Self {
         assert!(base >= biguint!(2));
         let whole_value = value_of_digits(&self.whole, &self.base);
         let whole = to_digit_arr(whole_value, &base);
 
-        let decimal = self.decimal_to_base(&base, up_to);
         Number {
             whole,
-            decimal,
+            left_div: self.left_div.clone(),
+            right_div: self.right_div.clone(),
             base,
+            negative: self.negative
         }
     }
-
 
     /// Construct a number from a readable &str, written in base 10.
     /// Because this is only meant to create constants, it could panic or result in weird behaviour
@@ -135,23 +141,37 @@ impl Number {
     /// let x = Number::new("1234.42");
     /// assert_eq!(x.get_base(), &biguint!(10));
     /// assert_eq!(x.get_whole_part(), &biguint_arr!(1, 2, 3, 4));
-    /// assert_eq!(x.get_decimal_part(), &biguint_arr!(4, 2));
+    /// assert_eq!(x.get_lossy_decimal(), &biguint_arr!(4, 2));
     /// ```
     pub fn new(value: &str) -> Self {
         let (whole, decimal) = value.split_once('.').unwrap_or((value, "0"));
-        let whole = if whole.is_empty() { "0" } else { whole };
+
+        let mut negative = false;
+        let whole = if whole.starts_with('-') {
+            negative = true;
+            &whole[1..]
+        } else if whole.is_empty() {
+            "0"
+        } else {
+          whole
+        };
+
         fn convert(x: &str) -> Vec<BigUint> {
-            x.as_bytes()
-                .iter()
-                .map(|&x| biguint!(x - b'0'))
-                .collect()
+            x.as_bytes().iter().map(|&x| biguint!(x - b'0')).collect()
         }
 
-        let (whole, decimal) = (convert(whole), convert(decimal));
+        let whole = convert(whole);
+
+        let right_div = biguint!(10).pow(decimal.len() as u32);
+        let left_div = BigUint::from_str(decimal).unwrap();
+
+
         Number {
             base: biguint!(10),
             whole,
-            decimal,
+            right_div,
+            left_div,
+            negative
         }
     }
 
@@ -165,25 +185,39 @@ impl Number {
     /// let decimal = biguint_arr!(1, 0, 1).to_vec();
     /// let base = biguint!(100);
     ///
-    /// let x = Number::from(whole.clone(), decimal.clone(), base.clone());
+    /// let x = Number::from(whole.clone(), decimal.clone(), base.clone(), false);
     ///
     /// assert_eq!(x.get_base(), &base);
     /// assert_eq!(x.get_whole_part(), &whole);
-    /// assert_eq!(x.get_decimal_part(), &decimal);
+    /// assert_eq!(x.get_lossy_decimal(), decimal);
     /// ```
-    pub fn from(whole: Vec<BigUint>, decimal: Vec<BigUint>, base: BigUint) -> Self {
+    pub fn from(whole: Vec<BigUint>, decimal: Vec<BigUint>, base: BigUint, negative: bool) -> Self {
         assert!(base >= biguint!(2));
         for i in whole.iter().chain(decimal.iter()) {
             assert!(i < &base);
         }
 
-        Self { whole, decimal, base}
+        let right_div = base.pow(decimal.len() as u32);
+        let left_div = value_of_digits(&decimal, &base);
+
+        Self {
+            whole,
+            left_div,
+            right_div,
+            base,
+            negative
+        }
     }
 }
 
 impl Debug for Number {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let x = format!("{:?}.{:?}", self.whole, self.decimal);
+
+        let x = if self.negative {
+            format!("-{:?}.{:?}", self.whole, self.get_lossy_decimal())
+        } else {
+            format!("{:?}.{:?}", self.whole, self.get_lossy_decimal())
+        };
         f.write_str(&x)
     }
 }

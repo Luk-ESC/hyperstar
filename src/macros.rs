@@ -4,7 +4,7 @@
 ///
 /// # Example
 /// ```rust
-/// use num_bigint::BigUint;
+/// use num::bigint::BigUint;
 /// use hyperstar::biguint;
 /// let x = biguint!(10);
 /// assert_eq!(x, BigUint::from(10u8));
@@ -15,16 +15,15 @@
 #[macro_export]
 macro_rules! biguint {
     ($val:expr) => {
-        ::num_bigint::BigUint::from($val as u128)
+        ::num::bigint::BigUint::from($val as u128)
     };
 }
-
 
 /// Create an array of BigUints
 ///
 /// # Example
 /// ```rust
-/// use num_bigint::BigUint;
+/// use num::bigint::BigUint;
 /// use hyperstar::biguint_arr;
 ///
 /// let x = biguint_arr!(1, 2, 3);
@@ -34,7 +33,7 @@ macro_rules! biguint {
 macro_rules! biguint_arr {
     ($($val:expr),+) => {
         [$(
-            ::num_bigint::BigUint::from($val as u128),
+            ::num::bigint::BigUint::from($val as u128),
         )+]
     };
 
