@@ -12,8 +12,11 @@ mod testing {
 
     #[test]
     fn yoooooo(){
-        let a = Number::from(biguint_arr!(0).to_vec(), biguint_arr!(1, 0, 1).to_vec(), biguint!(2), false);
-        assert_eq!(&a.get_lossy_decimal(100), &biguint_arr!(1, 0, 1));
+        let bases = biguint_arr!(2, 37, 42, 1000, 11);
+        for base in bases {
+            let a = Number::from(biguint_arr!(0).to_vec(), biguint_arr!(1, 0, 1).to_vec(), base, false);
+            assert_eq!(&a.get_lossy_decimal(100), &biguint_arr!(1, 0, 1));
+        }
     }
 
     #[test]
