@@ -1,11 +1,16 @@
 use num::bigint::BigUint;
 use num::integer::Integer;
-use std::fmt::{Debug, Formatter};
-use std::str::FromStr;
 use num::Zero;
+use std::fmt::{Debug, Formatter, Write};
+use std::str::FromStr;
 
 mod macros;
 mod tests;
+
+// convert base10 str to vec<Biguint>
+fn convert(x: &str) -> Vec<BigUint> {
+    x.as_bytes().iter().map(|&x| biguint!(x - b'0')).collect()
+}
 
 /// Calculate the value of a whole number in base `base`
 #[inline(always)]
@@ -57,7 +62,22 @@ pub struct Number {
     left_div: BigUint,
     right_div: BigUint,
     base: BigUint,
-    negative: bool
+    negative: bool,
+}
+
+// TODO doc
+fn expand(mut left: BigUint, right: BigUint, base: &BigUint) -> (Vec<BigUint>, usize) {
+    let mut left_arr = to_digit_arr(left.clone(), &base);
+    let mut added = 0usize;
+    // Expansion: 11 / 100 -> 110 / 100 added = 1
+    let right_val = right;
+    while left < right_val { // TODO: perf
+        left_arr.push(biguint!(0));
+        added += 1;
+        left *= base;
+    }
+
+    (left_arr, added)
 }
 
 impl Number {
@@ -69,39 +89,41 @@ impl Number {
         &self.base
     }
 
-    pub fn get_lossy_decimal(&self) -> Vec<BigUint> {
-        let mut right_div = self.right_div.clone();
-        let mut left_div = self.left_div.clone();
-        let y = right_div.gcd(&left_div);
-        right_div /= y.clone();
-        left_div /= y.clone();
+    pub fn get_lossy_decimal(&self, precision: usize) -> Vec<BigUint> {
+        let (mut left, added) = expand(self.left_div.clone(), self.right_div.clone(), self.get_base());
+        let right = to_digit_arr(self.right_div.clone(), self.get_base());
+
 
         let mut digits = vec![];
+        loop {
+            let mut to_take = right.len();
 
-        println!("{}", right_div);
-        println!("{}", self.base);
-
-        while !right_div.is_zero() && !left_div.is_zero() {
-            let (x, y) = right_div.div_mod_floor(&self.base);
-            right_div = x;
-            if !y.is_zero() {
-                right_div -= y * right_div.clone();
+            if digits.len() > precision {
+                return digits;
             }
-            let (x, y ) = left_div.div_mod_floor(&self.base);
-            println!("x: {x}, y: {y}");
-            println!("right_div: {right_div}, left_div: {left_div}");
-            println!("base: {}", self.base);
-            left_div = x;
-            digits.push(y)
+            let (chunk, div) = loop {
+                let chunk = &left[0..to_take];
+                let chunk = value_of_digits(chunk, self.get_base());
+                let div = self.right_div.clone();
+                if chunk >= div {
+                    break (chunk, div);
+                }
+                to_take += 1;
+            };
+
+            let (a, b) = chunk.div_mod_floor(&div);
+            digits.push(a);
+            if b.is_zero() {
+                return digits;
+            }
+            let (a, b) = expand(b, div, self.get_base());
+            left = a;
+            digits.extend(std::iter::repeat(biguint!(0)).take(b - 1));
         }
 
-        let mut x = vec![];
-        for i in digits.iter().rev().skip_while(|x| x.is_zero()) {
-            x.insert(0, i.clone());
-        }
-        x
+
+        digits
     }
-
 
     /// Convert self to base. `up_to` specifies the digits of precision, in the case
     /// where self is not accurately representable in the other base.
@@ -114,7 +136,7 @@ impl Number {
     /// let x = Number::new("16.25").to_base(biguint!(4));
     ///
     /// assert_eq!(x.get_whole_part(), biguint_arr!(1, 0, 0));
-    /// assert_eq!(x.get_lossy_decimal(), biguint_arr!(1));
+    /// assert_eq!(x.get_lossy_decimal(100), biguint_arr!(1));
     /// ```
     pub fn to_base(&self, base: BigUint) -> Self {
         assert!(base >= biguint!(2));
@@ -126,7 +148,7 @@ impl Number {
             left_div: self.left_div.clone(),
             right_div: self.right_div.clone(),
             base,
-            negative: self.negative
+            negative: self.negative,
         }
     }
 
@@ -141,7 +163,7 @@ impl Number {
     /// let x = Number::new("1234.42");
     /// assert_eq!(x.get_base(), &biguint!(10));
     /// assert_eq!(x.get_whole_part(), &biguint_arr!(1, 2, 3, 4));
-    /// assert_eq!(x.get_lossy_decimal(), &biguint_arr!(4, 2));
+    /// assert_eq!(x.get_lossy_decimal(100), &biguint_arr!(4, 2));
     /// ```
     pub fn new(value: &str) -> Self {
         let (whole, decimal) = value.split_once('.').unwrap_or((value, "0"));
@@ -153,25 +175,39 @@ impl Number {
         } else if whole.is_empty() {
             "0"
         } else {
-          whole
+            whole
         };
-
-        fn convert(x: &str) -> Vec<BigUint> {
-            x.as_bytes().iter().map(|&x| biguint!(x - b'0')).collect()
-        }
 
         let whole = convert(whole);
 
         let right_div = biguint!(10).pow(decimal.len() as u32);
         let left_div = BigUint::from_str(decimal).unwrap();
 
+        Number {
+            base: biguint!(10),
+            whole,
+            right_div,
+            left_div,
+            negative,
+        }
+    }
+
+    pub fn new_from_frac(negative: bool, whole: Option<Vec<BigUint>>, s: &str) -> Number {
+        let whole = whole.unwrap_or_default();
+
+        let (left_div, right_div) = s.split_once("/").unwrap();
+        let (left_div, right_div) = (convert(left_div), convert(right_div));
+        let (left_div, right_div) = (
+            value_of_digits(&left_div, &biguint!(10)),
+            value_of_digits(&right_div, &biguint!(10)),
+        );
 
         Number {
             base: biguint!(10),
             whole,
             right_div,
             left_div,
-            negative
+            negative,
         }
     }
 
@@ -181,15 +217,15 @@ impl Number {
     /// ```rust
     /// use hyperstar::{biguint, biguint_arr, Number};
     ///
-    /// let whole = biguint_arr!(16, 32, 64).to_vec();
+    /// let whole = biguint_arr!(0).to_vec();
     /// let decimal = biguint_arr!(1, 0, 1).to_vec();
-    /// let base = biguint!(100);
+    /// let base = biguint!(2);
     ///
     /// let x = Number::from(whole.clone(), decimal.clone(), base.clone(), false);
     ///
     /// assert_eq!(x.get_base(), &base);
     /// assert_eq!(x.get_whole_part(), &whole);
-    /// assert_eq!(x.get_lossy_decimal(), decimal);
+    /// assert_eq!(x.get_lossy_decimal(100), decimal);
     /// ```
     pub fn from(whole: Vec<BigUint>, decimal: Vec<BigUint>, base: BigUint, negative: bool) -> Self {
         assert!(base >= biguint!(2));
@@ -205,19 +241,23 @@ impl Number {
             left_div,
             right_div,
             base,
-            negative
+            negative,
         }
     }
 }
 
+fn normalize_to(base: &BigUint, mut right_div: BigUint, mut left_div: BigUint) -> (BigUint, BigUint) {
+    let y = right_div.gcd(&left_div);
+    right_div /= y.clone();
+    left_div /= y;
+
+
+
+    (right_div, left_div)
+}
+
 impl Debug for Number {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-
-        let x = if self.negative {
-            format!("-{:?}.{:?}", self.whole, self.get_lossy_decimal())
-        } else {
-            format!("{:?}.{:?}", self.whole, self.get_lossy_decimal())
-        };
-        f.write_str(&x)
+        f.write_fmt(format_args!("{}/{}", self.left_div, self.right_div))
     }
 }
